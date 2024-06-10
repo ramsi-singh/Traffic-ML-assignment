@@ -1,0 +1,65 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+
+data = pd.read_csv('Historical_Traffic_Matrix.csv')
+data_long = data.melt(var_name='Node_Pair', value_name='Traffic')
+data_long['Traffic'] = pd.to_numeric(data_long['Traffic'], errors='coerce')
+data_long['Time'] = data_long.groupby('Node_Pair').cumcount()
+traffic_data = data_long.groupby('Time')['Traffic'].sum().reset_index()
+
+lags = range(1, 11)
+for lag in lags:
+    traffic_data[f'Traffic_Lag_{lag}'] = traffic_data['Traffic'].shift(lag)
+traffic_data.dropna(inplace=True)
+
+X = traffic_data.drop(columns=['Traffic', 'Time']).values
+y = traffic_data['Traffic'].values
+
+scaler_X = StandardScaler()
+scaler_y = StandardScaler()
+X_scaled = scaler_X.fit_transform(X)
+y_scaled = scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y_scaled, test_size=0.2, random_state=42)
+
+models = {
+    "Linear Regression": LinearRegression(),
+    "SVR": SVR(),
+    "Random Forest": RandomForestRegressor()
+}
+
+results = []
+best_r2_score = -float('inf')
+
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    mse = mean_squared_error(y_test, predictions)
+    r2 = r2_score(y_test, predictions)
+    results.append({'Model': name, 'MSE': mse, 'R²': r2})
+    if r2 > best_r2_score:
+        best_r2_score = r2
+        best_model_name = name
+        best_model_predictions = predictions
+
+results_df = pd.DataFrame(results)
+print(results_df)
+
+y_test_original = scaler_y.inverse_transform(y_test.reshape(-1, 1)).flatten()
+best_model_predictions_original = scaler_y.inverse_transform(best_model_predictions.reshape(-1, 1)).flatten()
+
+plt.figure(figsize=(10, 6))
+plt.plot(y_test_original, label='Actual', color='blue')
+plt.plot(best_model_predictions_original, label='Predicted', color='orange')
+plt.title(f'Actual vs Predicted Traffic for {best_model_name}')
+plt.xlabel('Time')
+plt.ylabel('Traffic')
+plt.legend()
+plt.grid(True)
+plt.show()
